@@ -43,7 +43,7 @@ local State = {
 }
 
 local currentTarget = nil
-local cachedBulletSpeed = 3000
+local cachedBulletSpeed = 10000
 local cachedBulletGravity = 0
 
 -- 3. Ping Helper Function

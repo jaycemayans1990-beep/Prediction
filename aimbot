@@ -271,54 +271,49 @@ local function getClosestTarget()
     return closestPlayer
 end
 
--- 10. Advanced Dynamic Prediction Engine (แก้ไขให้ระยะใกล้เป๊ะเหมือนเดิม + ยิงไกลแม่นขึ้น)
+---- 10. Advanced Dynamic Prediction Engine (Strict Physics & Network Aware)
 local function getPredictedPosition(target)
     if not target or not target.Character then return nil end
     
-    local targetPart = target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")  
-    if not targetPart then return nil end  
-      
-    local targetPos = targetPart.Position  
+    local rootPart = target.Character:FindFirstChild("HumanoidRootPart")
+    local targetPart = target.Character:FindFirstChild("Head") or rootPart
+    if not rootPart or not targetPart then return nil end
+    
+    -- [1. Exact Hitbox Position]: ยกเลิก Hardcoded Vector (+1.5)
+    -- อ่านตำแหน่งชิ้นส่วนเป้าหมายตรงๆ เพื่อให้ตรงกับ Hitbox จริงของ Rig ตัวละครนั้นๆ
+    local targetPos = targetPart.Position
     
     if State.Prediction then  
-        local rootPart = target.Character:FindFirstChild("HumanoidRootPart")  
-        if rootPart then  
-            local camera = getCamera()
-            if not camera then return targetPos end 
-            
-            local distance = (targetPos - camera.CFrame.Position).Magnitude
-            
-            -- คืนค่ากลับไปใช้สมการ Ping ดั้งเดิมที่ทำงานได้เสถียรสุดแล้ว
+        local camera = getCamera()
+        if not camera then return targetPos end 
+        
+        local distance = (targetPos - camera.CFrame.Position).Magnitude
+        
+        -- [3. Conditional Ping Compensation]: 
+        -- ถ้าระบบเกมเป็น Client-Sided Hitreg ไม่ควรบวก Ping (ตั้ง State.PingCompensation = false)
+        local currentPing = 0
+        if State.PingCompensation then
             local rawPing = getPing()
-            local currentPing = (rawPing > 10) and (rawPing / 1000) or rawPing 
-            
-            local speed = State.AutoBulletSpeed and cachedBulletSpeed or State.BulletSpeed
-            local gravity = State.AutoBulletSpeed and cachedBulletGravity or State.BulletGravity
-            
-            -- เวลาเดินทางของกระสุน (ไม่มีการลดทอนความเร็วแบบมั่วๆ แล้ว)
-            local timeToTarget = (distance / math.max(speed, 1)) + currentPing
-            
-            local velocity = rootPart.AssemblyLinearVelocity  
-            
-            if velocity.Magnitude > 0.5 then
-                -- [จุดสำคัญ]: แยกการคำนวณแนวราบ (X, Z) และแนวดิ่ง (Y)
-                local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
-                local verticalVel = Vector3.new(0, velocity.Y, 0)
-                
-                -- แนวราบ (เดินหน้า/ถอยหลัง/ซ้าย/ขวา) ให้เผื่อเต็ม 100% ตามเวลา
-                targetPos = targetPos + (horizontalVel * timeToTarget)
-                
-                -- แนวดิ่ง (กระโดด/ตกจากตึก) ศัตรูจะตกลงมาชนพื้นและหยุด 
-                -- หากยิงระยะไกลแล้วเผื่อ 100% เป้าจะเล็งทะลุดิน จึงต้องลดน้ำหนักแกน Y ลง (ชดเชยแค่ 35%)
-                targetPos = targetPos + (verticalVel * timeToTarget * 0.35)
-            end
+            currentPing = (rawPing > 10) and (rawPing / 1000) or rawPing 
+        end
+        
+        local speed = State.AutoBulletSpeed and cachedBulletSpeed or State.BulletSpeed
+        local gravity = State.AutoBulletSpeed and cachedBulletGravity or workspace.Gravity
+        
+        -- [2. Strictly Physical Time]: ไม่มี TimeScale มาทำให้ t^2 ผิดเพี้ยน
+        local timeToTarget = (distance / math.max(speed, 1)) + currentPing
+        local velocity = rootPart.AssemblyLinearVelocity  
+        
+        -- Linear Prediction ตามความเร็วและเวลาดิบ
+        if velocity.Magnitude > 0.5 then
+            targetPos = targetPos + (velocity * timeToTarget)
+        end
 
-            -- ชดเชยวิถีกระสุนตก (Bullet Drop) แบบสมบูรณ์
-            if gravity > 0 then
-                local dropOffset = Vector3.new(0, 0.5 * gravity * (timeToTarget ^ 2), 0)
-                targetPos = targetPos + dropOffset
-            end
-        end  
+        -- [4. Bullet Drop Compensation]: ชดเชยจุดเล็งให้สูงขึ้น (+Y) ตามระยะทางที่กระสุนจะตกลงมา
+        if gravity > 0 then
+            local dropOffset = Vector3.new(0, 0.5 * gravity * (timeToTarget ^ 2), 0)
+            targetPos = targetPos + dropOffset
+        end
     end  
       
     return targetPos

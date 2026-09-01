@@ -155,6 +155,7 @@ local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 raycastParams.IgnoreWater = true
 
+-- สำหรับ Aimbot (ควบคุมผ่าน State.WallCheck)
 local function isVisible(targetPart)
     if not State.WallCheck then return true end
     if not targetPart or not targetPart.Parent then return false end
@@ -180,6 +181,46 @@ local function isVisible(targetPart)
       
     return true
 end
+
+-- สำหรับ ESP (เช็คสิ่งกีดขวาง + รองรับกระจกรถและวัตถุยิงทะลุได้ เพื่อสลับสี)
+local function isEnemyVisible(targetCharacter)
+    if not targetCharacter then return false end
+
+    local camera = getCamera()
+    if not camera then return false end
+
+    local targetPart = targetCharacter:FindFirstChild("Head") or targetCharacter:FindFirstChild("HumanoidRootPart")
+    if not targetPart then return false end
+
+    local origin = camera.CFrame.Position
+    local direction = targetPart.Position - origin
+
+    local raycastParamsESP = RaycastParams.new()
+    raycastParamsESP.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParamsESP.IgnoreWater = true
+
+    local filterList = {}
+    if LocalPlayer.Character then
+        table.insert(filterList, LocalPlayer.Character)
+    end
+    raycastParamsESP.FilterDescendantsInstances = filterList
+
+    local result = Workspace:Raycast(origin, direction, raycastParamsESP)
+
+    if result then
+        -- 1. ชนตัวศัตรูโดยตรง = ยิงได้ (ส่งกลับ true)
+        if result.Instance:IsDescendantOf(targetCharacter) then
+            return true
+        end
+        -- 2. ชนกระจกใส (Transparency > 0.3) หรือวัตถุยิง/เดินทะลุได้ (CanCollide = false) = ยิงผ่านได้ (ส่งกลับ true)
+        if result.Instance.Transparency > 0.3 or not result.Instance.CanCollide then
+            return true
+        end
+    end
+
+    return false -- มีกำแพงทึบบังอยู่จริง
+end
+
 
 -- 9. Target Acquisition
 local function getClosestTarget()
@@ -261,7 +302,11 @@ local function getPredictedPosition(target)
       
     return targetPos
 end
+
 -- 11. ESP Management
+local COLOR_VISIBLE = Color3.fromRGB(0, 255, 128)    -- สีเขียว: มองเห็น / ยิงผ่านได้
+local COLOR_OBSTRUCTED = Color3.fromRGB(255, 50, 50) -- สีแดง: มีกำแพงทึบบังอยู่
+
 local function clearESP()
     for _, player in ipairs(Players:GetPlayers()) do
         if player.Character then
@@ -283,23 +328,31 @@ local function processESP()
         if player ~= LocalPlayer and player.Character then
             local isEnemy = isValidEnemy(player)
             local char = player.Character
+            local head = char:FindFirstChild("Head")
 
+            -- ดึงค่าการมองเห็นจากฟังก์ชัน isEnemyVisible ใน Section 8
+            local visible = isEnemyVisible(char)
+            local currentColor = visible and COLOR_VISIBLE or COLOR_OBSTRUCTED
+
+            -- ===== 1. ESP Highlight =====
             local highlight = char:FindFirstChild("ESP_Highlight")
             if State.ESP and isEnemy then
                 if not highlight then  
                     highlight = Instance.new("Highlight")  
                     highlight.Name = "ESP_Highlight"  
-                    highlight.FillColor = Color3.fromRGB(180, 0, 255)
-                    highlight.OutlineColor = Color3.fromRGB(255, 255, 0)
-                    highlight.FillTransparency = 0.15
+                    highlight.FillTransparency = 0.25
                     highlight.OutlineTransparency = 0
                     highlight.Parent = char
                 end  
+                
+                -- อัปเดตสีตามสถานะการมองเห็นในทุกรอบลูป
+                highlight.FillColor = currentColor
+                highlight.OutlineColor = visible and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 0, 0)
             elseif highlight then
                 highlight:Destroy()
             end
 
-            local head = char:FindFirstChild("Head")
+            -- ===== 2. ESP NameTag =====
             local nameTag = char:FindFirstChild("ESP_NameTag")
             if State.ESPName and isEnemy and head then
                 if not nameTag then
@@ -312,15 +365,21 @@ local function processESP()
                     nameTag.Parent = char
 
                     local textLabel = Instance.new("TextLabel")
+                    textLabel.Name = "TagLabel"
                     textLabel.Size = UDim2.new(1, 0, 1, 0)
                     textLabel.BackgroundTransparency = 1
                     textLabel.Text = player.Name
-                    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
                     textLabel.TextStrokeTransparency = 0
                     textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
                     textLabel.Font = Enum.Font.SourceSansBold
                     textLabel.TextSize = 14
                     textLabel.Parent = nameTag
+                end
+
+                -- อัปเดตสีตัวอักษรชื่อตามสถานะการมองเห็น
+                local textLabel = nameTag:FindFirstChild("TagLabel")
+                if textLabel then
+                    textLabel.TextColor3 = currentColor
                 end
             elseif nameTag then
                 nameTag:Destroy()

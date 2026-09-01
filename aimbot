@@ -182,7 +182,7 @@ local function isVisible(targetPart)
     return true
 end
 
--- สำหรับ ESP (เช็คสิ่งกีดขวาง + รองรับกระจกรถและวัตถุยิงทะลุได้ เพื่อสลับสี)
+-- สำหรับ ESP (ยิง Raycast ทะลุวัตถุล่องหน เพื่อเช็คกำแพงทึบจริงๆ แก้ปัญหาสีเขียวค้างหลังตึก)
 local function isEnemyVisible(targetCharacter)
     if not targetCharacter then return false end
 
@@ -193,7 +193,8 @@ local function isEnemyVisible(targetCharacter)
     if not targetPart then return false end
 
     local origin = camera.CFrame.Position
-    local direction = targetPart.Position - origin
+    local targetPos = targetPart.Position
+    local direction = targetPos - origin
 
     local raycastParamsESP = RaycastParams.new()
     raycastParamsESP.FilterType = Enum.RaycastFilterType.Exclude
@@ -205,22 +206,40 @@ local function isEnemyVisible(targetCharacter)
     end
     raycastParamsESP.FilterDescendantsInstances = filterList
 
-    local result = Workspace:Raycast(origin, direction, raycastParamsESP)
+    local currentOrigin = origin
+    local currentDirection = direction
 
-    if result then
-        -- 1. ชนตัวศัตรูโดยตรง = ยิงได้ (ส่งกลับ true)
-        if result.Instance:IsDescendantOf(targetCharacter) then
+    -- ลูปยิงทะลุวัตถุโปร่งแสง/เอฟเฟกต์กล้องปืน/พาร์ทล่องหน สูงสุด 5 ชั้น
+    for i = 1, 5 do
+        local result = Workspace:Raycast(currentOrigin, currentDirection, raycastParamsESP)
+        
+        -- ถ้าลำแสงยิงทะลุไปจนถึงตัวศัตรูโดยไม่โดนอะไรทึบบัง = มองเห็น (สีเขียว)
+        if not result then
             return true
         end
-        -- 2. ชนกระจกใส (Transparency > 0.3) หรือวัตถุยิง/เดินทะลุได้ (CanCollide = false) = ยิงผ่านได้ (ส่งกลับ true)
-        if result.Instance.Transparency > 0.3 or not result.Instance.CanCollide then
+
+        local hitPart = result.Instance
+
+        -- 1. ชนชิ้นส่วนตัวศัตรูโดยตรง = มองเห็น (สีเขียว)
+        if hitPart:IsDescendantOf(targetCharacter) then
             return true
+        end
+
+        -- 2. ถ้าชนวัตถุล่องหน (Transparency > 0.8) หรือของตกแต่งที่ไม่มีแรงชน (CanCollide = false)
+        -- ให้ใส่พาร์ทนั้นลงใน Filter แล้วยิงทะลุไปเช็คกำแพงข้างหลังต่อ
+        if hitPart.Transparency > 0.8 or not hitPart.CanCollide then
+            table.insert(filterList, hitPart)
+            raycastParamsESP.FilterDescendantsInstances = filterList
+            currentDirection = targetPos - result.Position
+            currentOrigin = result.Position + (currentDirection.Unit * 0.05)
+        else
+            -- 3. ชนตึก กำแพงทึบ หรือสิ่งก่อสร้างจริง = มีสิ่งกีดขวางบังอยู่ (สีแดง)
+            return false
         end
     end
 
-    return false -- มีกำแพงทึบบังอยู่จริง
+    return false
 end
-
 
 -- 9. Target Acquisition
 local function getClosestTarget()

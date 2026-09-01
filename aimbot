@@ -33,7 +33,7 @@ local State = {
     WallCheck = false,
     Prediction = true,
     AutoBulletSpeed = true,
-    BulletSpeed = 10000,
+    BulletSpeed = 3000,
     BulletGravity = 0,
     Smoothness = 0.3,
     FOV = 150,
@@ -43,7 +43,7 @@ local State = {
 }
 
 local currentTarget = nil
-local cachedBulletSpeed = 10000
+local cachedBulletSpeed = 3000
 local cachedBulletGravity = 0
 
 -- 3. Ping Helper Function
@@ -97,7 +97,7 @@ local function updateWeaponStats()
         end
     end
 
-    cachedBulletSpeed = math.max(State.BulletSpeed or 10000, 1)
+    cachedBulletSpeed = math.max(State.BulletSpeed or 3000, 1)
     cachedBulletGravity = State.BulletGravity or 0
 end
 
@@ -213,8 +213,10 @@ end
 
 -- 10. Advanced Dynamic Prediction Engine
 local function getPredictedPosition(target)
+    -- 1. เช็คว่า target และ Character มีอยู่จริง
     if not target or not target.Character then return nil end
     
+    -- 2. หาชิ้นส่วนเป้าหมาย (ลำดับความสำคัญ: Head -> HumanoidRootPart)
     local targetPart = target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")  
     if not targetPart then return nil end  
       
@@ -224,18 +226,32 @@ local function getPredictedPosition(target)
         local rootPart = target.Character:FindFirstChild("HumanoidRootPart")  
         if rootPart then  
             local camera = getCamera()
+            -- [FIX]: ป้องกัน Error กรณีกล้องยังโหลดไม่เสร็จหรือไม่พบกล้อง
+            if not camera then return targetPos end 
+            
             local distance = (targetPos - camera.CFrame.Position).Magnitude
-            local currentPing = getPing()
+            
+            -- [FIX]: ตรวจสอบให้แน่ใจว่า Ping อยู่ในหน่วย "วินาที" (ถ้า getPing คืนค่าเป็น ms ให้หาร 1000)
+            -- สมมติว่า getPing() คืนค่าเป็น ms (เช่น 100) -> 100 / 1000 = 0.1 วินาที
+            local rawPing = getPing()
+            local currentPing = (rawPing > 10) and (rawPing / 1000) or rawPing 
             
             local speed = State.AutoBulletSpeed and cachedBulletSpeed or State.BulletSpeed
             local gravity = State.AutoBulletSpeed and cachedBulletGravity or State.BulletGravity
+            
+            -- คำนวณเวลาที่กระสุนจะเดินทางไปถึง (ระยะทาง / ความเร็ว) + เวลาหน่วงจากปิง
+            -- math.max(speed, 1) ช่วยป้องกัน Error การหารด้วย 0 ได้ดีมาก
             local timeToTarget = (distance / math.max(speed, 1)) + currentPing
             
             local velocity = rootPart.AssemblyLinearVelocity  
+            
+            -- [IMPROVEMENT]: ตรวจสอบการเคลื่อนที่ เพื่อชดเชยตำแหน่ง (Prediction)
             if velocity.Magnitude > 0.5 then
                 targetPos = targetPos + (velocity * timeToTarget)
             end
 
+            -- [CHECK]: ชดเชยวิถีกระสุนตก (Bullet Drop)
+            -- สูตร 0.5 * g * t^2 ถูกต้องแล้ว (เมื่อเป้าหมายบวกค่า Y เพิ่ม = เล็งเผื่อสูงขึ้น)
             if gravity > 0 then
                 local dropOffset = Vector3.new(0, 0.5 * gravity * (timeToTarget ^ 2), 0)
                 targetPos = targetPos + dropOffset
@@ -245,7 +261,6 @@ local function getPredictedPosition(target)
       
     return targetPos
 end
-
 -- 11. ESP Management
 local function clearESP()
     for _, player in ipairs(Players:GetPlayers()) do

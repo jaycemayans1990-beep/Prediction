@@ -304,8 +304,11 @@ local function getPredictedPosition(target)
 end
 
 -- 11. ESP Management
-local COLOR_VISIBLE = Color3.fromRGB(0, 255, 128)    -- สีเขียว: มองเห็น / ยิงผ่านได้
-local COLOR_OBSTRUCTED = Color3.fromRGB(255, 50, 50) -- สีแดง: มีกำแพงทึบบังอยู่
+local COLOR_VISIBLE_FILL = Color3.fromRGB(0, 255, 128)     -- ตัวสีเขียว (เห็นตัว / ยิงผ่านได้)
+local COLOR_VISIBLE_OUTLINE = Color3.fromRGB(255, 215, 0)  -- ขอบสีทอง (Gold)
+
+local COLOR_OBSTRUCTED_FILL = Color3.fromRGB(255, 50, 50)  -- ตัวสีแดง (มีกำแพงทึบบังอยู่)
+local COLOR_OBSTRUCTED_OUTLINE = Color3.fromRGB(100, 0, 0) -- ขอบสีแดงเข้ม
 
 local function clearESP()
     for _, player in ipairs(Players:GetPlayers()) do
@@ -332,7 +335,6 @@ local function processESP()
 
             -- ดึงค่าการมองเห็นจากฟังก์ชัน isEnemyVisible ใน Section 8
             local visible = isEnemyVisible(char)
-            local currentColor = visible and COLOR_VISIBLE or COLOR_OBSTRUCTED
 
             -- ===== 1. ESP Highlight =====
             local highlight = char:FindFirstChild("ESP_Highlight")
@@ -345,9 +347,9 @@ local function processESP()
                     highlight.Parent = char
                 end  
                 
-                -- อัปเดตสีตามสถานะการมองเห็นในทุกรอบลูป
-                highlight.FillColor = currentColor
-                highlight.OutlineColor = visible and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 0, 0)
+                -- สลับสีตัวและสีขอบตามสถานะ (เห็น = ตัวเขียว ขอบทอง | บัง = ตัวแดง ขอบแดงเข้ม)
+                highlight.FillColor = visible and COLOR_VISIBLE_FILL or COLOR_OBSTRUCTED_FILL
+                highlight.OutlineColor = visible and COLOR_VISIBLE_OUTLINE or COLOR_OBSTRUCTED_OUTLINE
             elseif highlight then
                 highlight:Destroy()
             end
@@ -379,7 +381,7 @@ local function processESP()
                 -- อัปเดตสีตัวอักษรชื่อตามสถานะการมองเห็น
                 local textLabel = nameTag:FindFirstChild("TagLabel")
                 if textLabel then
-                    textLabel.TextColor3 = currentColor
+                    textLabel.TextColor3 = visible and COLOR_VISIBLE_FILL or COLOR_OBSTRUCTED_FILL
                 end
             elseif nameTag then
                 nameTag:Destroy()

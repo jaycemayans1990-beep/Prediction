@@ -271,7 +271,7 @@ local function getClosestTarget()
     return closestPlayer
 end
 
--- 10. Advanced Dynamic Prediction Engine (ปรับแก้การยิงระยะไกล)
+-- 10. Advanced Dynamic Prediction Engine (แก้ไขให้ระยะใกล้เป๊ะเหมือนเดิม + ยิงไกลแม่นขึ้น)
 local function getPredictedPosition(target)
     if not target or not target.Character then return nil end
     
@@ -288,29 +288,32 @@ local function getPredictedPosition(target)
             
             local distance = (targetPos - camera.CFrame.Position).Magnitude
             
-            -- ดักจับค่า Ping ไม่ให้สูงเกินไปจน Prediction เพี้ยนยิงเลยเป้า
+            -- คืนค่ากลับไปใช้สมการ Ping ดั้งเดิมที่ทำงานได้เสถียรสุดแล้ว
             local rawPing = getPing()
-            local currentPing = math.clamp((rawPing > 10) and (rawPing / 1000) or rawPing, 0, 0.15)
+            local currentPing = (rawPing > 10) and (rawPing / 1000) or rawPing 
             
             local speed = State.AutoBulletSpeed and cachedBulletSpeed or State.BulletSpeed
             local gravity = State.AutoBulletSpeed and cachedBulletGravity or State.BulletGravity
             
-            -- ปรับลดความเร็วกระสุนลงเล็กน้อยเมื่อยิงไกลเกิน 200 studs เพื่อชดเชยแรงต้านอากาศ (Drag)
-            local effectiveSpeed = speed
-            if distance > 200 then
-                effectiveSpeed = speed * 0.92
-            end
-
-            local timeToTarget = (distance / math.max(effectiveSpeed, 1)) + currentPing
+            -- เวลาเดินทางของกระสุน (ไม่มีการลดทอนความเร็วแบบมั่วๆ แล้ว)
+            local timeToTarget = (distance / math.max(speed, 1)) + currentPing
+            
             local velocity = rootPart.AssemblyLinearVelocity  
             
-            -- คาดเดาการเคลื่อนที่โดยลดน้ำหนักการคูณเมื่อยิงระยะไกลมาก
             if velocity.Magnitude > 0.5 then
-                local predictionFactor = math.clamp(1 - (distance / 2000), 0.5, 1)
-                targetPos = targetPos + (velocity * timeToTarget * predictionFactor)
+                -- [จุดสำคัญ]: แยกการคำนวณแนวราบ (X, Z) และแนวดิ่ง (Y)
+                local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
+                local verticalVel = Vector3.new(0, velocity.Y, 0)
+                
+                -- แนวราบ (เดินหน้า/ถอยหลัง/ซ้าย/ขวา) ให้เผื่อเต็ม 100% ตามเวลา
+                targetPos = targetPos + (horizontalVel * timeToTarget)
+                
+                -- แนวดิ่ง (กระโดด/ตกจากตึก) ศัตรูจะตกลงมาชนพื้นและหยุด 
+                -- หากยิงระยะไกลแล้วเผื่อ 100% เป้าจะเล็งทะลุดิน จึงต้องลดน้ำหนักแกน Y ลง (ชดเชยแค่ 35%)
+                targetPos = targetPos + (verticalVel * timeToTarget * 0.35)
             end
 
-            -- ชดเชยวิถีกระสุนตก (Bullet Drop)
+            -- ชดเชยวิถีกระสุนตก (Bullet Drop) แบบสมบูรณ์
             if gravity > 0 then
                 local dropOffset = Vector3.new(0, 0.5 * gravity * (timeToTarget ^ 2), 0)
                 targetPos = targetPos + dropOffset

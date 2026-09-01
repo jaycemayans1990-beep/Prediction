@@ -33,7 +33,7 @@ local State = {
     WallCheck = false,
     Prediction = true,
     AutoBulletSpeed = true,
-    BulletSpeed = 3000,
+    BulletSpeed = 10000,
     BulletGravity = 0,
     Smoothness = 0.3,
     FOV = 150,
@@ -67,7 +67,7 @@ end
 -- 5. Dynamic Weapon Stats Engine
 local function updateWeaponStats()
     if not State.AutoBulletSpeed then
-        cachedBulletSpeed = math.max(State.BulletSpeed or 3000, 1)
+        cachedBulletSpeed = math.max(State.BulletSpeed or 10000, 1)
         cachedBulletGravity = State.BulletGravity or 0
         return
     end
@@ -87,7 +87,7 @@ local function updateWeaponStats()
                 if type(speed) == "number" and speed > 0 then
                     cachedBulletSpeed = speed
                 else
-                    cachedBulletSpeed = State.BulletSpeed or 3000
+                    cachedBulletSpeed = State.BulletSpeed or 10000
                 end
 
                 local drop = config.Drop or config.BulletDrop or config.Gravity
@@ -97,7 +97,7 @@ local function updateWeaponStats()
         end
     end
 
-    cachedBulletSpeed = math.max(State.BulletSpeed or 3000, 1)
+    cachedBulletSpeed = math.max(State.BulletSpeed or 10000, 1)
     cachedBulletGravity = State.BulletGravity or 0
 end
 

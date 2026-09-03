@@ -1,6 +1,6 @@
 -- =====================================================================
 -- CAMERA-BASED AIM ASSIST & APPROXIMATE PREDICTION SYSTEM
--- Architecture: 5-Layer Service Model with Centralized Lifecycle Management
+-- Studio-Compatible Version (Standard Roblox APIs Only)
 -- =====================================================================
 
 local Players = game:GetService("Players")
@@ -8,6 +8,11 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ล้าง UI เก่าออกหากมีการรันสคริปต์ซ้ำ (แทนการใช้ getgenv)
+local existingUI = PlayerGui:FindFirstChild("SnyX_UI")
+if existingUI then existingUI:Destroy() end
 
 -- ==========================================
 -- 1. CLEANUP MANAGER (Lifecycle Control)
@@ -15,8 +20,8 @@ local LocalPlayer = Players.LocalPlayer
 local CleanupManager = {
     Connections = {},
     Instances = {},
-    Drawings = {},
-    CustomCleanups = {}
+    CustomCleanups = {},
+    IsRunning = true
 }
 
 function CleanupManager:AddConn(name, conn)
@@ -29,32 +34,21 @@ function CleanupManager:AddInstance(name, inst)
     self.Instances[name] = inst
 end
 
-function CleanupManager:AddDrawing(name, drawing)
-    if self.Drawings[name] then self.Drawings[name]:Remove() end
-    self.Drawings[name] = drawing
-end
-
 function CleanupManager:AddCustomCleanup(func)
     table.insert(self.CustomCleanups, func)
 end
 
 function CleanupManager:CleanAll()
-    getgenv().SnyX_Running = false 
+    self.IsRunning = false 
     
     for _, conn in pairs(self.Connections) do conn:Disconnect() end
     for _, inst in pairs(self.Instances) do inst:Destroy() end
-    for _, draw in pairs(self.Drawings) do draw:Remove() end
     for _, func in ipairs(self.CustomCleanups) do pcall(func) end
     
     table.clear(self.Connections)
     table.clear(self.Instances)
-    table.clear(self.Drawings)
     table.clear(self.CustomCleanups)
 end
-
-if getgenv().SnyX_Cleanup then getgenv().SnyX_Cleanup:CleanAll() end
-getgenv().SnyX_Cleanup = CleanupManager
-getgenv().SnyX_Running = true
 
 -- ==========================================
 -- 2. GLOBAL STATE
@@ -86,10 +80,36 @@ local function getPing()
 end
 
 -- ==========================================
--- 3. HEURISTIC WEAPON SERVICE
+-- 3. MAIN UI & FOV CIRCLE (Roblox Instances)
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SnyX_UI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = PlayerGui
+CleanupManager:AddInstance("MainUI", ScreenGui)
+
+local FOVCircle = Instance.new("Frame")
+FOVCircle.Name = "FOVCircle"
+FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVCircle.BackgroundTransparency = 1
+FOVCircle.Parent = ScreenGui
+
+local circleCorner = Instance.new("UICorner")
+circleCorner.CornerRadius = UDim.new(1, 0)
+circleCorner.Parent = FOVCircle
+
+local circleStroke = Instance.new("UIStroke")
+circleStroke.Color = Color3.fromRGB(255, 255, 255)
+circleStroke.Thickness = 1.5
+circleStroke.Transparency = 0.3
+circleStroke.Parent = FOVCircle
+
+-- ==========================================
+-- 4. HEURISTIC WEAPON SERVICE
 -- ==========================================
 local WeaponService = {
-    Speed = 5000,
+    Speed = 3000,
     Gravity = workspace.Gravity
 }
 
@@ -147,7 +167,7 @@ if LocalPlayer.Character then setupCharacterWeaponListener(LocalPlayer.Character
 CleanupManager:AddConn("CharAdded", LocalPlayer.CharacterAdded:Connect(setupCharacterWeaponListener))
 
 -- ==========================================
--- 4. VISIBILITY SERVICE (Immutable Raycast)
+-- 5. VISIBILITY SERVICE (Immutable Raycast)
 -- ==========================================
 local VisibilityService = {}
 local sharedRaycast = RaycastParams.new()
@@ -207,7 +227,7 @@ local function isValidEnemy(player)
 end
 
 -- ==========================================
--- 5. TARGET ACQUISITION SERVICE (State Machine)
+-- 6. TARGET ACQUISITION SERVICE
 -- ==========================================
 local TargetService = {
     CurrentTarget = nil,
@@ -215,12 +235,21 @@ local TargetService = {
 }
 
 function TargetService:GetTargetPart(char)
+    if not char then return nil end
     local root = char:FindFirstChild("HumanoidRootPart")
-    if State.TargetPartMode == "Head" then return char:FindFirstChild("Head") or root end
-    if State.TargetPartMode == "Random" then 
-        local parts = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}
-        local selected = parts[math.random(1, #parts)]
-        return char:FindFirstChild(selected) or root
+    
+    if State.TargetPartMode == "Head" then 
+        return char:FindFirstChild("Head") or root 
+    elseif State.TargetPartMode == "Torso" then
+        return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or root
+    elseif State.TargetPartMode == "Random" then 
+        local parts = {"Head", "UpperTorso", "Torso", "LowerTorso", "HumanoidRootPart"}
+        local available = {}
+        for _, p in ipairs(parts) do
+            local found = char:FindFirstChild(p)
+            if found then table.insert(available, found) end
+        end
+        if #available > 0 then return available[math.random(1, #available)] end
     end
     return root 
 end
@@ -277,7 +306,7 @@ function TargetService:AcquireTarget(camera, screenCenter)
 end
 
 -- ==========================================
--- 6. APPROXIMATE PROJECTILE PREDICTION
+-- 7. APPROXIMATE PROJECTILE PREDICTION
 -- ==========================================
 local function getPredictedPosition(targetPart, rootPart)
     local targetPos = targetPart.Position
@@ -308,7 +337,7 @@ local function getPredictedPosition(targetPart, rootPart)
 end
 
 -- ==========================================
--- 7. ESP SERVICE
+-- 8. ESP SERVICE (Occlusion Visualization)
 -- ==========================================
 local ESPService = {
     Cache = {},
@@ -404,28 +433,23 @@ function ESPService:ProcessESP()
 end
 
 task.spawn(function()
-    while getgenv().SnyX_Running and task.wait(0.15) do 
+    while CleanupManager.IsRunning and task.wait(0.15) do 
         ESPService:ProcessESP() 
     end
 end)
 
 -- ==========================================
--- 8. CAMERA MANIPULATION ENGINE
+-- 9. CAMERA MANIPULATION ENGINE (RenderStepped)
 -- ==========================================
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Thickness = 1.5
-FOVCircle.Color = Color3.fromRGB(255, 255, 255)
-FOVCircle.Filled = false
-FOVCircle.Transparency = 0.7
-CleanupManager:AddDrawing("FOVCircle", FOVCircle)
-
 CleanupManager:AddConn("RenderStep", RunService.RenderStepped:Connect(function(deltaTime)
     local camera = getCamera()
     if not camera then return end
 
-    local screenCenter = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-    FOVCircle.Position = screenCenter
-    FOVCircle.Radius = State.FOV
+    local viewport = camera.ViewportSize
+    local screenCenter = Vector2.new(viewport.X / 2, viewport.Y / 2)
+    
+    FOVCircle.Position = UDim2.fromOffset(screenCenter.X, screenCenter.Y)
+    FOVCircle.Size = UDim2.fromOffset(State.FOV * 2, State.FOV * 2)
     FOVCircle.Visible = State.ShowFOV
 
     if not State.Aimbot then
@@ -456,14 +480,8 @@ CleanupManager:AddConn("RenderStep", RunService.RenderStepped:Connect(function(d
 end))
 
 -- ==========================================
--- 9. UI CONSTRUCTION
+-- 10. CONFIGURATION UI
 -- ==========================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SnyX_UI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-CleanupManager:AddInstance("MainUI", ScreenGui)
-
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 45, 0, 45)
 ToggleBtn.Position = UDim2.new(0.03, 0, 0.2, 0)
@@ -505,6 +523,7 @@ mainStroke.Parent = MainFrame
 ToggleBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
+CleanupManager:AddConn("UIToggleBtn", ToggleBtn.MouseButton1Click)
 
 local TitleBar = Instance.new("TextLabel")
 TitleBar.Size = UDim2.new(1, 0, 0, 35)

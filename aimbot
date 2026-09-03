@@ -11,7 +11,6 @@ local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
 -- 1. CLEANUP MANAGER (Lifecycle Control)
--- Controls execution state and ensures complete memory disposal.
 -- ==========================================
 local CleanupManager = {
     Connections = {},
@@ -88,7 +87,6 @@ end
 
 -- ==========================================
 -- 3. HEURISTIC WEAPON SERVICE
--- Attempts to extract projectile parameters based on common framework schemas.
 -- ==========================================
 local WeaponService = {
     Speed = 3000,
@@ -175,7 +173,6 @@ function VisibilityService:CheckVisibility(targetCharacter, pierceCount)
     local currentOrigin = origin
     local currentDirection = targetPos - origin
     
-    -- Clone filter array to prevent mutable state side-effects during iteration
     local dynamicFilter = self:GetBaseFilter()
     local maxPierces = pierceCount or 1 
 
@@ -281,7 +278,6 @@ end
 
 -- ==========================================
 -- 6. APPROXIMATE PROJECTILE PREDICTION
--- Estimates future position using current linear velocity and simple gravity.
 -- ==========================================
 local function getPredictedPosition(targetPart, rootPart)
     local targetPos = targetPart.Position
@@ -295,10 +291,8 @@ local function getPredictedPosition(targetPart, rootPart)
     local velocity = rootPart.AssemblyLinearVelocity
 
     if velocity.Magnitude > 0.5 then
-        -- Linear target velocity displacement
         targetPos = targetPos + (velocity * flightTime)
         
-        -- Optional network replication offset (server-sided interpretation)
         if State.PingCompensation then
             local pingOffset = velocity * getPing()
             targetPos = targetPos + pingOffset
@@ -306,7 +300,6 @@ local function getPredictedPosition(targetPart, rootPart)
     end
 
     if WeaponService.Gravity > 0 then
-        -- Upward offset to counter simple downward acceleration
         local dropOffset = Vector3.new(0, 0.5 * WeaponService.Gravity * (flightTime ^ 2), 0)
         targetPos = targetPos + dropOffset
     end
@@ -315,8 +308,7 @@ local function getPredictedPosition(targetPart, rootPart)
 end
 
 -- ==========================================
--- 7. ESP SERVICE (Occlusion Visualization)
--- Uses AlwaysOnTop rendering for target visualization through scene geometry.
+-- 7. ESP SERVICE
 -- ==========================================
 local ESPService = {
     Cache = {},
@@ -358,7 +350,6 @@ function ESPService:ProcessESP()
                 continue
             end
 
-            -- Invalidate visibility cache on character structural change or timeout
             if not self.Cache[player] or self.Cache[player].Character ~= char or (now - self.Cache[player].LastCheck > 0.35) then
                 self.Cache[player] = {
                     Character = char,
@@ -375,7 +366,7 @@ function ESPService:ProcessESP()
                     highlight = Instance.new("Highlight")
                     highlight.Name = "ESP_Highlight"
                     highlight.FillTransparency = 0.25
-                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop[span_0](start_span)[span_0](end_span)
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                     highlight.Parent = char
                 end
                 highlight.FillColor = currentColor
@@ -391,7 +382,7 @@ function ESPService:ProcessESP()
                         nameTag.Adornee = head
                         nameTag.Size = UDim2.new(0, 150, 0, 30)
                         nameTag.StudsOffset = Vector3.new(0, 2, 0)
-                        nameTag.AlwaysOnTop = true[span_1](start_span)[span_1](end_span)
+                        nameTag.AlwaysOnTop = true
                         nameTag.Parent = char
 
                         local textLabel = Instance.new("TextLabel")

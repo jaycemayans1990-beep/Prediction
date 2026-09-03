@@ -89,7 +89,7 @@ end
 -- 3. HEURISTIC WEAPON SERVICE
 -- ==========================================
 local WeaponService = {
-    Speed = 3000,
+    Speed = 5000,
     Gravity = workspace.Gravity
 }
 
